@@ -70,11 +70,25 @@ live_design! {
       }
     }
 
+    Slideshow = <View> {
+      flow: Overlay,
+
+      image = <Image> {
+          width: Fill,
+          height: Fill,
+          fit: Biggest,
+          source: (PLACEHOLDER)
+      }
+      overlay = <SlideshowOverlay> {}
+    }
+
     App = {{App}} {
+      placeholder: (PLACEHOLDER),
+
       ui: <Root> {
         <Window> {
           body = <View> {
-            <SlideshowOverlay> {}
+            slideshow = <Slideshow> {}
           }
         }
       }
@@ -84,6 +98,8 @@ live_design! {
 #[derive(Live)]
 pub struct App {
     #[live]
+    placeholder: LiveDependency,
+    #[live]
     ui: WidgetRef,
     #[rust]
     state: State,
@@ -91,26 +107,85 @@ pub struct App {
 
 impl App {
   fn load_image_paths(&mut self, cx: &mut Cx, path: &Path) {
-      self.state.image_paths.clear();
-      for entry in path.read_dir().unwrap() {
-          let entry = entry.unwrap();
-          let path = entry.path();
-          if !path.is_file() {
-              continue;
+    self.state.image_paths.clear();
+    for entry in path.read_dir().unwrap() {
+        let entry = entry.unwrap();
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        self.state.image_paths.push(path);
+    }
+
+    if self.state.image_paths.is_empty() {
+        self.set_current_image(cx, None);
+    } else {
+        self.set_current_image(cx, Some(0));
+    }
+  }
+
+  fn set_current_image(&mut self, cx: &mut Cx, image_idx: Option<usize>) {
+    self.state.current_image_idx = image_idx;
+
+    let image = self.ui.image(id!(slideshow.image));
+    if let Some(image_idx) = self.state.current_image_idx {
+        let image_path = &self.state.image_paths[image_idx];
+        image
+            .load_image_file_by_path_async(cx, &image_path)
+            .unwrap();
+    } else {
+        image
+            .load_image_dep_by_path(cx, self.placeholder.as_str())
+            .unwrap();
+    }
+    self.ui.redraw(cx);
+  }
+
+  pub fn navigate_left(&mut self, cx: &mut Cx) {
+    if let Some(image_idx) = self.state.current_image_idx {
+        if image_idx > 0 {
+            self.set_current_image(cx, Some(image_idx - 1));
+        }
+    }
+  }
+
+  pub fn navigate_right(&mut self, cx: &mut Cx) {
+        if let Some(image_idx) = self.state.current_image_idx {
+          if image_idx + 1 < self.state.image_paths.len() {
+              self.set_current_image(cx, Some(image_idx + 1));
           }
-          self.state.image_paths.push(path);
       }
-      self.ui.redraw(cx);
   }
 }
 
 impl AppMain for App {
-  fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
-    let mut scope = Scope::with_data(&mut self.state);
-    self.ui.handle_event(cx, event, &mut scope);
-  }
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
+        self.match_event(cx, event);
+        self.ui
+            .handle_event(cx, event, &mut Scope::with_data(&mut self.state));
+    }
 }
 
+impl MatchEvent for App {
+  fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+      if self.ui.button(id!(navigate_left)).clicked(&actions) {
+          self.navigate_left(cx);
+      }
+      if self.ui.button(id!(navigate_right)).clicked(&actions) {
+          self.navigate_right(cx);
+      }
+
+      if let Some(event) =
+          self.ui.view(id!(slideshow.overlay)).key_down(&actions)
+      {
+          match event.key_code {
+              KeyCode::ArrowLeft => self.navigate_left(cx),
+              KeyCode::ArrowRight => self.navigate_right(cx),
+              _ => {}
+          }
+      }
+  }
+}
 // must call this to use the live DSL (generated function)
 impl LiveRegister for App {
     fn live_register(cx: &mut Cx) {
@@ -128,6 +203,7 @@ impl LiveHook for App {
 pub struct State {
     image_paths: Vec<PathBuf>,
     max_images_per_row: usize,
+    current_image_idx: Option<usize>,
 }
 
 impl Default for State {
@@ -135,6 +211,7 @@ impl Default for State {
       Self {
           image_paths: Vec::new(),
           max_images_per_row: 4,
+          current_image_idx: None,
       }
   }
 }
