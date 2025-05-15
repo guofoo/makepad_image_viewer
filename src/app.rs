@@ -1,4 +1,6 @@
+
 use makepad_widgets::*;
+use std::path::{Path, PathBuf};
 
 live_design! {
     use link::widgets::*;
@@ -45,12 +47,27 @@ live_design! {
     }
 }
 
-#[derive(Live, LiveHook)]
+#[derive(Live)]
 pub struct App {
     #[live]
     ui: WidgetRef,
     #[rust]
     state: State,
+}
+
+impl App {
+  fn load_image_paths(&mut self, cx: &mut Cx, path: &Path) {
+      self.state.image_paths.clear();
+      for entry in path.read_dir().unwrap() {
+          let entry = entry.unwrap();
+          let path = entry.path();
+          if !path.is_file() {
+              continue;
+          }
+          self.state.image_paths.push(path);
+      }
+      self.ui.redraw(cx);
+  }
 }
 
 impl AppMain for App {
@@ -67,16 +84,22 @@ impl LiveRegister for App {
     }
 }
 
+impl LiveHook for App {
+  fn after_new_from_doc(&mut self, cx: &mut Cx) {
+      let path = "resources/images";
+      self.load_image_paths(cx, path.as_ref());
+  }
+}
 #[derive(Debug)]
 pub struct State {
-    num_images: usize,
+    image_paths: Vec<PathBuf>,
     max_images_per_row: usize,
 }
 
 impl Default for State {
   fn default() -> Self {
       Self {
-          num_images: 12,
+          image_paths: Vec::new(),
           max_images_per_row: 4,
       }
   }
@@ -84,7 +107,7 @@ impl Default for State {
 
 impl State {
   fn num_images(&self) -> usize {
-      self.num_images
+    self.image_paths.len()
   }
 
   fn num_rows(&self) -> usize {
@@ -127,6 +150,13 @@ impl Widget for ImageRow {
                 }
 
                 let item = list.item(cx, item_idx, live_id!(ImageItem));
+                let first_image_idx = state.first_image_idx_for_row(row_idx);
+                let image_idx = first_image_idx + item_idx;
+                let image_path = &state.image_paths[image_idx];
+                let image = item.image(id!(image));
+                image
+                    .load_image_file_by_path_async(cx, &image_path)
+                    .unwrap();
                 item.draw_all(cx, &mut Scope::empty());
             }
         }
