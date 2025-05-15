@@ -6,6 +6,8 @@ live_design! {
     use link::widgets::*;
 
     PLACEHOLDER = dep("crate://self/resources/placeholder.jpg");
+    LEFT_ARROW = dep("crate://self/resources/left_arrow.svg");
+    RIGHT_ARROW = dep("crate://self/resources/right_arrow.svg");
 
     ImageItem = <View> {
       width: 256,
@@ -35,15 +37,47 @@ live_design! {
           ImageRow = <ImageRow> {}
       }
     }
+    // deep/nested inheritance supported
+    SlideshowNavigateButton = <Button> {
+      width: 50,
+      height: Fill,
+      draw_bg: {
+          color: #fff0,
+          color_down: #fff2,
+      }
+      icon_walk: { width: 9 },
+      text: "",
+      grab_key_focus: false,
+    }
+
+    SlideshowOverlay = <View> {
+      height: Fill,
+      width: Fill,
+      cursor: Arrow,
+      capture_overload: true,
+
+      navigate_left = <SlideshowNavigateButton> {
+        draw_icon: {
+          svg_file: (LEFT_ARROW)
+        }
+      }
+      // build-in widget, fill up all the space that's left
+      <Filler> {}
+      navigate_right = <SlideshowNavigateButton> {
+        draw_icon: {
+          svg_file: (RIGHT_ARROW)
+        }
+      }
+    }
 
     App = {{App}} {
-        ui: <Root> {
-            <Window> {
-              body = <View> {
-                <ImageGrid> {}
-              }
-            }
+      ui: <Root> {
+        <Window> {
+          body = <View> {
+            <SlideshowOverlay> {}
+          }
         }
+      }
     }
 }
 
