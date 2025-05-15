@@ -37,6 +37,24 @@ live_design! {
           ImageRow = <ImageRow> {}
       }
     }
+
+    MenuBar = <View> {
+      width: Fill,
+      height: Fit,
+
+      <Filler> {}
+      slideshow_button = <Button> {
+          text: "Slideshow"
+      }
+    }
+
+    ImageBrowser = <View> {
+      flow: Down,
+
+      <MenuBar> {}
+      <ImageGrid> {}
+    }
+
     // deep/nested inheritance supported
     SlideshowNavigateButton = <Button> {
       width: 50,
@@ -88,7 +106,7 @@ live_design! {
       ui: <Root> {
         <Window> {
           body = <View> {
-            slideshow = <Slideshow> {}
+            <ImageBrowser> {}
           }
         }
       }
