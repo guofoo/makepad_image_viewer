@@ -165,7 +165,19 @@ impl App {
         self.state.image_paths.push(path);
     }
 
-    if self.state.image_paths.is_empty() {
+    let query = self.ui.text_input(id!(query)).text();
+    self.filter_image_paths(cx, &query);
+  }
+
+  pub fn filter_image_paths(&mut self, cx: &mut Cx, query: &str) {
+    self.state.filtered_image_idxs.clear();
+    for (image_idx, image_path) in self.state.image_paths.iter().enumerate()
+    {
+        if image_path.to_str().unwrap().contains(&query) {
+            self.state.filtered_image_idxs.push(image_idx);
+        }
+    }
+    if self.state.filtered_image_idxs.is_empty() {
         self.set_current_image(cx, None);
     } else {
         self.set_current_image(cx, Some(0));
@@ -177,7 +189,8 @@ impl App {
 
     let image = self.ui.image(id!(slideshow.image));
     if let Some(image_idx) = self.state.current_image_idx {
-        let image_path = &self.state.image_paths[image_idx];
+        let filtered_image_idx = self.state.filtered_image_idxs[image_idx];
+        let image_path = &self.state.image_paths[filtered_image_idx];
         image
             .load_image_file_by_path_async(cx, &image_path)
             .unwrap();
@@ -216,6 +229,10 @@ impl AppMain for App {
 
 impl MatchEvent for App {
   fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+    if let Some(query) = self.ui.text_input(id!(query)).changed(&actions) {
+      self.filter_image_paths(cx, &query);
+    }
+
     if self.ui.button(id!(slideshow_button)).clicked(&actions) {
         self.ui
             .page_flip(id!(page_flip))
@@ -261,6 +278,7 @@ impl LiveHook for App {
 #[derive(Debug)]
 pub struct State {
     image_paths: Vec<PathBuf>,
+    filtered_image_idxs: Vec<usize>,
     max_images_per_row: usize,
     current_image_idx: Option<usize>,
 }
@@ -269,6 +287,7 @@ impl Default for State {
   fn default() -> Self {
       Self {
           image_paths: Vec::new(),
+          filtered_image_idxs: Vec::new(),
           max_images_per_row: 4,
           current_image_idx: None,
       }
@@ -277,7 +296,7 @@ impl Default for State {
 
 impl State {
   fn num_images(&self) -> usize {
-    self.image_paths.len()
+    self.filtered_image_idxs.len()
   }
 
   fn num_rows(&self) -> usize {
@@ -292,50 +311,6 @@ impl State {
       let first_image_idx = self.first_image_idx_for_row(row_idx);
       let num_remaining_images = self.num_images() - first_image_idx;
       self.max_images_per_row.min(num_remaining_images)
-  }
-}
-
-#[derive(Live, LiveHook, Widget)]
-pub struct ImageRow {
-    #[deref]
-    view: View,
-}
-
-impl Widget for ImageRow {
-  fn draw_walk(
-    &mut self,
-    cx: &mut Cx2d,
-    scope: &mut Scope,
-    walk: Walk,
-) -> DrawStep {
-    while let Some(item) = self.view.draw_walk(cx, scope, walk).step() {
-        if let Some(mut list) = item.as_portal_list().borrow_mut() {
-            let state = scope.data.get_mut::<State>().unwrap();
-            let row_idx = *scope.props.get::<usize>().unwrap();
-
-            list.set_item_range(cx, 0, state.num_images_for_row(row_idx));
-            while let Some(item_idx) = list.next_visible_item(cx) {
-                if item_idx >= state.num_images_for_row(row_idx) {
-                    continue;
-                }
-
-                let item = list.item(cx, item_idx, live_id!(ImageItem));
-                let first_image_idx = state.first_image_idx_for_row(row_idx);
-                let image_idx = first_image_idx + item_idx;
-                let image_path = &state.image_paths[image_idx];
-                let image = item.image(id!(image));
-                image
-                    .load_image_file_by_path_async(cx, &image_path)
-                    .unwrap();
-                item.draw_all(cx, &mut Scope::empty());
-            }
-        }
-    }
-    DrawStep::done()
-  }
-
-  fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-      self.view.handle_event(cx, event, scope)
   }
 }
 
@@ -369,11 +344,57 @@ impl Widget for ImageGrid {
         }
     }
     DrawStep::done()
+  }
+
+  fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+      self.view.handle_event(cx, event, scope)
+  }
 }
 
-    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        self.view.handle_event(cx, event, scope)
+#[derive(Live, LiveHook, Widget)]
+pub struct ImageRow {
+    #[deref]
+    view: View,
+}
+
+impl Widget for ImageRow {
+  fn draw_walk(
+    &mut self,
+    cx: &mut Cx2d,
+    scope: &mut Scope,
+    walk: Walk,
+) -> DrawStep {
+    while let Some(item) = self.view.draw_walk(cx, scope, walk).step() {
+        if let Some(mut list) = item.as_portal_list().borrow_mut() {
+            let state = scope.data.get_mut::<State>().unwrap();
+            let row_idx = *scope.props.get::<usize>().unwrap();
+
+            list.set_item_range(cx, 0, state.num_images_for_row(row_idx));
+            while let Some(item_idx) = list.next_visible_item(cx) {
+                if item_idx >= state.num_images_for_row(row_idx) {
+                    continue;
+                }
+
+                let item = list.item(cx, item_idx, live_id!(ImageItem));
+                let image_idx =
+                    state.first_image_idx_for_row(row_idx) + item_idx;
+                let filtered_image_idx =
+                    state.filtered_image_idxs[image_idx];
+                let image_path = &state.image_paths[filtered_image_idx];
+                let image = item.image(id!(image));
+                image
+                    .load_image_file_by_path_async(cx, &image_path)
+                    .unwrap();
+                item.draw_all(cx, &mut Scope::empty());
+            }
+        }
     }
+    DrawStep::done()
+}
+
+  fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+      self.view.handle_event(cx, event, scope)
+  }
 }
 
 // generate the main function; can be used for wasm and mobile
